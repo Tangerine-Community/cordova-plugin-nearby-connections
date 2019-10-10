@@ -38,9 +38,11 @@ service.onConnection((connection) => {
 })
 ```
 
-Note 10/10/2019: The startAdvertising function in the current endpoint also performs discovery. It populates a list of mDiscoveredEndpoints. 
+Log 10/10/2019: The startAdvertising function in the current endpoint also performs discovery. It populates a list of mDiscoveredEndpoints. 
 The onEndpointDiscovered(Endpoint endpoint) method currently stops discovery and population of this list when it finds a peer. 
-Next step is to change this behaviour so that a list of all peers is created. 
+Next step is to change this behaviour so that a list of all peers is created. I'd like to see startAdvertising return this list of peers, 
+which we could display in the UI. Then the Aggregator would loop through this list, connectToEndpoint, transferData, and repeat this process to 
+ensure consistency across the peers. Both the aggregator and the peer would run listenForTransfer and confirm that the transfers are successful.
 
 From Device 1:
 ```javascript
