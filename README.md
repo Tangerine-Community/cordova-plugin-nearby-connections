@@ -13,6 +13,14 @@ Let's say the application has two modes that a device can operate in:
 The Aggregator discovers a list of the peers and begins the data sync with each peer. Since this application embraces 
 eventual consistency, it must make two passes through this list to make sure all peers have data that has been collected by the aggregator.
 
+## Where this API needs to go
+
+Log 10/10/2019: The startAdvertising function in the current endpoint also performs discovery. It populates a list of mDiscoveredEndpoints. 
+The onEndpointDiscovered(Endpoint endpoint) method currently stops discovery and population of this list when it finds a peer. 
+Next step is to change this behaviour so that a list of all peers is created. I'd like to see startAdvertising return this list of peers, 
+which we could display in the UI. Then the Aggregator would loop through this list, connectToEndpoint, transferData, and repeat this process to 
+ensure consistency across the peers. Both the aggregator and the peer would run listenForTransfer and confirm that the transfers are successful.
+
 ## A simpler test
 
 1. Device 2 advertises as a service (possibly have an option for requiring confirmation). 
@@ -37,12 +45,6 @@ service.onConnection((connection) => {
   })
 })
 ```
-
-Log 10/10/2019: The startAdvertising function in the current endpoint also performs discovery. It populates a list of mDiscoveredEndpoints. 
-The onEndpointDiscovered(Endpoint endpoint) method currently stops discovery and population of this list when it finds a peer. 
-Next step is to change this behaviour so that a list of all peers is created. I'd like to see startAdvertising return this list of peers, 
-which we could display in the UI. Then the Aggregator would loop through this list, connectToEndpoint, transferData, and repeat this process to 
-ensure consistency across the peers. Both the aggregator and the peer would run listenForTransfer and confirm that the transfers are successful.
 
 From Device 1:
 ```javascript
