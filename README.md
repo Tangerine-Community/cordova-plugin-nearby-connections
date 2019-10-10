@@ -42,8 +42,6 @@ Note 10/10/2019: The startAdvertising function in the current endpoint also perf
 The onEndpointDiscovered(Endpoint endpoint) method currently stops discovery and population of this list when it finds a peer. 
 Next step is to change this behaviour so that a list of all peers is created. 
 
-onEndpointDiscovered
-
 From Device 1:
 ```javascript
 const serviceManager = new window.cordova.NearbyConnectionsPlugin.serviceManager()
