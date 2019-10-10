@@ -1,11 +1,21 @@
 # cordova-plugin-nearby-connections
- Supports Google Nearby Connections API
- 
- This plugin is a WIP. Not yet functional.
- 
- Example of what this might support...
+Supports Android [Nearby Connections](https://developers.google.com/nearby/connections/overview) API.
 
-1. Device 2 advertises as a service (possibly have an option for requiring confirmation)
+
+This plugin is a WIP. Not yet functional.
+ 
+## Example of what this might support
+ 
+Let's say the application has two modes that a device can operate in:
+- Aggregator: Advertises itself as the aggregation service and performs a data sync between itself and a group of Peers.
+- Peer: Advertises itself as a peer that can be sync'd by the master
+
+The Aggregator discovers a list of the peers and begins the data sync with each peer. Since this application embraces 
+eventual consistency, it must make two passes through this list to make sure all peers have data that has been collected by the aggregator.
+
+## A simpler test
+
+1. Device 2 advertises as a service (possibly have an option for requiring confirmation). 
 2. Device 1 gets list of nearby advertised services 
 3. Device 1 sends connection request to Device 2 (?)
 4. Device 2 accepts connection request (?)
@@ -18,7 +28,7 @@ Here's what the API might look like, without connection confirmations for now. T
 
 From Device 2:
 ```javascript
-const service = new window.cordova.P2PPayloadAPI.Service()
+const service = new window.cordova.NearbyConnectionsPlugin.Service()
 service.advertise()
 service.onConnection((connection) => {
   console.log('Connection made!')
@@ -30,7 +40,7 @@ service.onConnection((connection) => {
 
 From Device 1:
 ```javascript
-const serviceManager = new window.cordova.P2PPaylaodAPI.serviceManager()
+const serviceManager = new window.cordova.NearbyConnectionsPlugin.serviceManager()
 serviceManger.getServices()
   .onServiceAvailable((service) => {
     service.makeConnection((connection) => {

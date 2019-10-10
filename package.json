@@ -1,0 +1,21 @@
+{
+  "name": "cordova-plugin-nearby-connections",
+  "version": "0.0.1",
+  "description": "Apache Cordova plugin that supports p2p communications using the Android Nearby Connections API.",
+  "cordova": {
+    "id": "cordova-plugin-nearby-connections",
+    "platforms": [
+      "android"
+    ]
+  },
+  "keywords": [
+    "ecosystem:cordova",
+    "cordova-android"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tangerine-Community/TangyP2PPlugin"
+  },
+  "author": "",
+  "license": "ISC"
+}
