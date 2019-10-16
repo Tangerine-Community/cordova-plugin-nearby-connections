@@ -62,10 +62,13 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+
+import static android.Manifest.permission.ACCESS_COARSE_LOCATION;
 
 public class NearbyConnectionsPlugin extends CordovaPlugin
 {
@@ -77,7 +80,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
 
     public static final String PERMISSION_TO_WIFI = Manifest.permission.CHANGE_WIFI_STATE;
     private static final String PERMISSION_DENIED_ERROR = "Permission denied";
-    String [] permissions = { PERMISSION_TO_WIFI };
+    String [] permissions = { PERMISSION_TO_WIFI, ACCESS_COARSE_LOCATION };
 
     public PluginResult pluginResult;
 
@@ -213,7 +216,18 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                 cordova.getActivity().runOnUiThread(new Runnable() {
                     public void run() {
                         Log.i(TAG, "connectToEndpoint");
-                        connectToEndpoint(endpoint);
+                        String endpointString = "";
+                        try {
+                            endpointString = args.getString(0);
+                            String[] epArray = endpointString.split("_");
+                            String id = epArray[0];
+                            String name = epArray[1];
+                            Endpoint endpoint = new Endpoint(id, name);
+                            connectToEndpoint(endpoint);
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+//                        connectToEndpoint(endpoint);
                     }
                 });
                 return true;
@@ -234,7 +248,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                         } catch (JSONException e) {
                             e.printStackTrace();
                         }
-                        sendPluginMessage("sending payloadString beginning with: " + payloadString.subSequence(0,30), true, "log", null);
+                        sendPluginMessage("sending payload to: " + payloadString.subSequence(0,30), true, "log", null);
                         byte[] payloadBytes = payloadString.getBytes();
                         Payload bytesPayload = Payload.fromBytes(payloadBytes);
                         send(bytesPayload);
@@ -335,7 +349,8 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
             if(!PermissionHelper.hasPermission(this, p))
             {
 //                LOG.d(TAG, "hasPermisssion() is false for: " + p);
-                LOG.d(TAG, "hasPermisssion() is false for: " + p + " but we will let this pass for now. TODO fix.");
+                LOG.d(TAG, "hasPermisssion() is false for: " + p);
+                cordova.requestPermission(this, 0, p);
 //                return false;
             }
         }
@@ -394,6 +409,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                             String.format(
                                     "mConnectionLifecycleCallback onConnectionInitiated(endpointId=%s, endpointName=%s)",
                                     endpointId, connectionInfo.getEndpointName()));
+                    sendPluginMessage("Connection initiated to " + endpointId, true, "log", null);
                     Endpoint endpoint = new Endpoint(endpointId, connectionInfo.getEndpointName());
                     mPendingConnections.put(endpointId, endpoint);
                     NearbyConnectionsPlugin.this.onConnectionInitiated(endpoint, connectionInfo);
@@ -777,7 +793,20 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                                 if (getServiceId().equals(info.getServiceId())) {
                                     Endpoint endpoint = new Endpoint(endpointId, info.getEndpointName());
                                     mDiscoveredEndpoints.put(endpointId, endpoint);
-                                    onEndpointDiscovered(endpoint);
+//                                    onEndpointDiscovered(endpoint);
+                                    JSONObject jsonObject = new JSONObject();
+                                    Iterator<Map.Entry<String, Endpoint>> itr = mDiscoveredEndpoints.entrySet().iterator();
+                                    while(itr.hasNext()) {
+                                        Map.Entry<String, Endpoint> entry = itr.next();
+                                        Endpoint ep = entry.getValue();
+                                        try {
+                                            jsonObject.put(ep.getId(), ep.getName());
+                                        } catch (JSONException e) {
+                                            Log.e(TAG, "sendPluginMessage Error: " + e.getMessage());
+                                            e.printStackTrace();
+                                        }
+                                    }
+                                    sendPluginMessage("Endpoints", true, "endpoints", jsonObject);
                                 }
                             }
 
@@ -800,6 +829,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                             public void onFailure(@NonNull Exception e) {
                                 mIsDiscovering = false;
                                 logW("startDiscovering() failed.", e);
+                                sendPluginMessage("startDiscovering() failed." + e.getMessage(), true, "log", null);
                                 onDiscoveryFailed();
                             }
                         });
@@ -876,6 +906,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                             @Override
                             public void onFailure(@NonNull Exception e) {
                                 logW("requestConnection() failed.", e);
+                                sendPluginMessage("Connection failed to " + endpoint.getId(), true, "log", null);
                                 mIsConnecting = false;
                                 onConnectionFailed(endpoint);
                             }
@@ -889,12 +920,23 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
 
     private void connectedToEndpoint(Endpoint endpoint) {
         logD(String.format("connectedToEndpoint(endpoint=%s)", endpoint));
+
+        JSONObject jsonObject = new JSONObject();
+        try {
+            jsonObject.put(endpoint.getId(), endpoint.getName());
+        } catch (JSONException e) {
+            Log.e(TAG, "connectedToEndpoint Error: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        sendPluginMessage("Connected to " + endpoint.getId(), true, "connected", jsonObject);
         mEstablishedConnections.put(endpoint.getId(), endpoint);
         onEndpointConnected(endpoint);
     }
 
     private void disconnectedFromEndpoint(Endpoint endpoint) {
         logD(String.format("disconnectedFromEndpoint(endpoint=%s)", endpoint));
+        sendPluginMessage("Disconnected from " + endpoint.getId(), true, "log", null);
         mEstablishedConnections.remove(endpoint.getId());
         onEndpointDisconnected(endpoint);
     }
