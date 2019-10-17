@@ -248,7 +248,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                         } catch (JSONException e) {
                             e.printStackTrace();
                         }
-                        sendPluginMessage("sending payload to: " + payloadString.subSequence(0,30), true, "log", null);
+                        sendPluginMessage("sending payload beginning with: " + payloadString.subSequence(0,50), true, "log", null);
                         byte[] payloadBytes = payloadString.getBytes();
                         Payload bytesPayload = Payload.fromBytes(payloadBytes);
                         send(bytesPayload);
@@ -649,9 +649,15 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
     }
 
     protected void logW(String msg, Throwable e) {
-        e.printStackTrace();
-        String error = e.getMessage();
-        sendPluginMessage(msg + " error: " + error, true, "log", null);
+        if (e != null) {
+            e.printStackTrace();
+            String error = e.getMessage();
+            sendPluginMessage(msg + " error: " + error, true, "log", null);
+        } else {
+            Log.d(TAG, msg);
+            sendPluginMessage(msg, true, "log", null);
+        }
+
     }
 
     protected void logE(String msg, Throwable e) {
@@ -697,6 +703,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                             @Override
                             public void onSuccess(Void unusedResult) {
                                 logV("Now advertising endpoint " + localEndpointName);
+                                sendPluginMessage(localEndpointName, true, "localEndpointName", null);
                                 onAdvertisingStarted();
                             }
                         })
@@ -807,6 +814,8 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                                         }
                                     }
                                     sendPluginMessage("Endpoints", true, "endpoints", jsonObject);
+                                } else {
+                                    logW("Endpoint rejected: " + info.getServiceId() + " does not match " + getServiceId());
                                 }
                             }
 
