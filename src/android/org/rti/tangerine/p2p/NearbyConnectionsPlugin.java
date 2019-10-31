@@ -463,7 +463,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
             // after the call to onPayloadReceived().
             switch (update.getStatus()) {
                 case PayloadTransferUpdate.Status.SUCCESS:
-                    NearbyConnectionsPlugin.sendPluginMessage("Data transfer completed! ", true, cbContext, TAG, "log", null);
+                    NearbyConnectionsPlugin.sendPluginMessage("Data transfer completed! ", true, cbContext, TAG, "payloadReceived", null);
                     break;
                 case PayloadTransferUpdate.Status.FAILURE:
                     NearbyConnectionsPlugin.sendPluginMessage("Data transfer failure.", true, cbContext, TAG, "log", null);
