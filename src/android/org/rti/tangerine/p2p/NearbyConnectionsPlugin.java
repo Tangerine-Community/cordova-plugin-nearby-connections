@@ -92,7 +92,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
      * The connection strategy we'll use for Nearby Connections. In this case, we've decided on
      * P2P_STAR, which is a combination of Bluetooth Classic and WiFi Hotspots.
      */
-    private static final Strategy STRATEGY = Strategy.P2P_STAR;
+    private static final Strategy STRATEGY = Strategy.P2P_POINT_TO_POINT;
 
     /**
      * This service id lets us find other nearby devices that are interested in the same thing. Our
@@ -139,6 +139,8 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
     /** True if we are advertising. */
     private boolean mIsAdvertising = false;
 
+    private JSONObject endpointList;
+
     /**
      * Sets the context of the Command.
      *
@@ -176,7 +178,6 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
         }
         else if ("startAdvertising".equals(action)) {
             if (hasPermisssion()) {
-                Log.i(TAG, "We hasPermisssion");
                 cordova.getActivity().runOnUiThread(new Runnable() {
                     public void run() {
                         Log.i(TAG, "startAdvertising");
@@ -195,7 +196,6 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
         }
         else if ("listenForTransfer".equals(action)) {
             if (hasPermisssion()) {
-                Log.i(TAG, "We hasPermisssion");
                 cordova.getActivity().runOnUiThread(new Runnable() {
                     public void run() {
                         Log.i(TAG, "listenForTransfer");
@@ -212,9 +212,10 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
             return true;
         } else if ("connectToEndpoint".equals(action)) {
             if(hasPermisssion()) {
-                Log.i(TAG, "We hasPermisssion");
                 cordova.getActivity().runOnUiThread(new Runnable() {
                     public void run() {
+                        Log.i(TAG, "stopAdvertising");
+                        stopAdvertising();
                         Log.i(TAG, "connectToEndpoint");
                         String endpointString = "";
                         try {
@@ -238,18 +239,21 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
             return true;
         } else if ("transferData".equals(action)) {
             if(hasPermisssion()) {
-                Log.i(TAG, "We hasPermisssion");
                 cordova.getActivity().runOnUiThread(new Runnable() {
                     public void run() {
                         Log.i(TAG, "transferData");
                         String payloadString = "";
+                        JSONObject payload = null;
                         try {
-                            payloadString = args.getString(0);
+                            // payloadString = args.getString(0);
+                            payload = args.getJSONObject(0);
+                            payloadString = payload.getString("object");
                         } catch (JSONException e) {
                             e.printStackTrace();
                         }
                         sendPluginMessage("sending payload beginning with: " + payloadString.subSequence(0,50), true, "log", null);
-                        byte[] payloadBytes = payloadString.getBytes();
+//                         byte[] payloadBytes = payload.getBytes();
+                        byte[] payloadBytes = payload.toString().getBytes();
                         Payload bytesPayload = Payload.fromBytes(payloadBytes);
                         send(bytesPayload);
                     }
@@ -296,8 +300,9 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
      * @param keepCallback
      * @param messageType
      * @param object
+     * @param originName
      */
-    public static void sendPluginMessage(String pluginMessage, boolean keepCallback, CallbackContext cbContext, String tag, String messageType, JSONObject object) {
+    public static void sendPluginMessage(String pluginMessage, boolean keepCallback, CallbackContext cbContext, String tag, String messageType, JSONObject object, String originName) {
         if (tag == null) {
             tag = TAG;
         }
@@ -308,6 +313,9 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
             jsonObject.put("messageType", messageType);
             jsonObject.put("message", pluginMessage);
             jsonObject.put("object", object);
+            if (originName != null) {
+                jsonObject.put("originName", originName);
+            }
         } catch (JSONException e) {
             Log.e(tag, "sendPluginMessage Error: " + e.getMessage());
             e.printStackTrace();
@@ -409,7 +417,15 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                             String.format(
                                     "mConnectionLifecycleCallback onConnectionInitiated(endpointId=%s, endpointName=%s)",
                                     endpointId, connectionInfo.getEndpointName()));
-                    sendPluginMessage("Connection initiated to " + endpointId, true, "log", null);
+                    JSONObject jsonObject = new JSONObject();
+                    try {
+                        jsonObject.put("id", endpointId);
+                        jsonObject.put("endpointName", connectionInfo.getEndpointName());
+                    } catch (JSONException e) {
+                        Log.e(TAG, "onConnectionInitiated Error: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                    sendPluginMessage("Connection initiated to " + endpointId, true, "peer", jsonObject);
                     Endpoint endpoint = new Endpoint(endpointId, connectionInfo.getEndpointName());
                     mPendingConnections.put(endpointId, endpoint);
                     NearbyConnectionsPlugin.this.onConnectionInitiated(endpoint, connectionInfo);
@@ -460,24 +476,25 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                             String.format(
                                     "onPayloadTransferUpdate(endpointId=%s, update=%s)", endpointId, update));
                     //            // Bytes payloads are sent as a single chunk, so you'll receive a SUCCESS update immediately
-            // after the call to onPayloadReceived().
-            switch (update.getStatus()) {
-                case PayloadTransferUpdate.Status.SUCCESS:
-                    NearbyConnectionsPlugin.sendPluginMessage("Data transfer completed! ", true, cbContext, TAG, "payloadReceived", null);
-                    break;
-                case PayloadTransferUpdate.Status.FAILURE:
-                    NearbyConnectionsPlugin.sendPluginMessage("Data transfer failure.", true, cbContext, TAG, "log", null);
-                    break;
-                case PayloadTransferUpdate.Status.CANCELED:
-                    NearbyConnectionsPlugin.sendPluginMessage("Data transfer cancelled.", true, cbContext, TAG, "log", null);
-                    break;
-                case PayloadTransferUpdate.Status.IN_PROGRESS:
-                    // don't log, could be verbose.
-                    break;
-                default:
-                    // Unknown status code
-                    NearbyConnectionsPlugin.sendPluginMessage("Data transfer update - unknown: " + update.getStatus(), true, cbContext, TAG, "log", null);
-            }
+                    // after the call to onPayloadReceived().
+                    switch (update.getStatus()) {
+                        case PayloadTransferUpdate.Status.SUCCESS:
+                            String originName = getName();
+                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer completed! ", true, cbContext, TAG, "payloadReceived", null, originName);
+                            break;
+                        case PayloadTransferUpdate.Status.FAILURE:
+                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer failure.", true, cbContext, TAG, "log", null, null);
+                            break;
+                        case PayloadTransferUpdate.Status.CANCELED:
+                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer cancelled.", true, cbContext, TAG, "log", null, null);
+                            break;
+                        case PayloadTransferUpdate.Status.IN_PROGRESS:
+                            // don't log, could be verbose.
+                            break;
+                        default:
+                            // Unknown status code
+                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer update - unknown: " + update.getStatus(), true, cbContext, TAG, "log", null, null);
+                    }
                 }
             };
 
@@ -489,6 +506,10 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
     private void setState(State state) {
         if (mState == state) {
             logW("State set to " + state + " but already in that state");
+            JSONObject endpointList = getEndpointList();
+            if (endpointList.length() > 0) {
+                sendPluginMessage("Endpoints", true, "endpoints", endpointList);
+            }
             return;
         }
 
@@ -645,23 +666,23 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
     }
 
     protected void logW(String msg) {
-        sendPluginMessage(msg, true, "log", null);
+        sendPluginMessage(msg, true, "error", null);
     }
 
     protected void logW(String msg, Throwable e) {
         if (e != null) {
             e.printStackTrace();
             String error = e.getMessage();
-            sendPluginMessage(msg + " error: " + error, true, "log", null);
+            sendPluginMessage(msg + " error: " + error, true, "error", null);
         } else {
             Log.d(TAG, msg);
-            sendPluginMessage(msg, true, "log", null);
+            sendPluginMessage(msg, true, "error", null);
         }
 
     }
 
     protected void logE(String msg, Throwable e) {
-        sendPluginMessage(msg, true, "log", null);
+        sendPluginMessage(msg, true, "error", null);
     }
 
     private static String generateRandomName() {
@@ -743,10 +764,17 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
      */
     protected void onConnectionInitiated(Endpoint endpoint, ConnectionInfo connectionInfo) {
         // We accept the connection immediately.
-        logD(
-                String.format(
-                        "onConnectionInitiated(endpoint=%s, isIncomingConnection=%s, endpointName=%s)",
-                        endpoint, connectionInfo.isIncomingConnection(), connectionInfo.getEndpointName()));
+        if (connectionInfo != null) {
+            logD(
+                    String.format(
+                            "onConnectionInitiated(endpoint=%s, isIncomingConnection=%s, endpointName=%s)",
+                            endpoint, connectionInfo.isIncomingConnection(), connectionInfo.getEndpointName()));
+        } else {
+            logD(
+                    String.format(
+                            "Re-using a connection; onConnectionInitiated(endpoint=%s, isIncomingConnection=%s, endpointName=%s)",
+                            endpoint, "", ""));
+        }
         acceptConnection(endpoint);
     }
 
@@ -813,6 +841,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                                             e.printStackTrace();
                                         }
                                     }
+                                    setEndpointList(jsonObject);
                                     sendPluginMessage("Endpoints", true, "endpoints", jsonObject);
                                 } else {
                                     logW("Endpoint rejected: " + info.getServiceId() + " does not match " + getServiceId());
@@ -914,9 +943,21 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                         new OnFailureListener() {
                             @Override
                             public void onFailure(@NonNull Exception e) {
-                                logW("requestConnection() failed.", e);
+                                logW("requestConnection() failed. Message: " +  e.getMessage(), e);
                                 sendPluginMessage("Connection failed to " + endpoint.getId(), true, "log", null);
                                 mIsConnecting = false;
+                                if (e.getMessage().contains("8003")) {
+                                    logW("requestConnection() continuing with current connection.", e);
+//                                    NearbyConnectionsPlugin.this.onConnectionInitiated(endpoint, null);
+                                    JSONObject jsonObject = new JSONObject();
+                                    try {
+                                        jsonObject.put(endpoint.getId(), endpoint.getName());
+                                    } catch (JSONException e1) {
+                                        Log.e(TAG, "connectedToEndpoint Error: " + e1.getMessage());
+                                        e1.printStackTrace();
+                                    }
+                                    sendPluginMessage("Connected to " + endpoint.getId(), true, "connected", jsonObject);
+                                }
                                 onConnectionFailed(endpoint);
                             }
                         });
@@ -1006,6 +1047,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                         new OnFailureListener() {
                             @Override
                             public void onFailure(@NonNull Exception e) {
+                                e.printStackTrace();
                                 logW("sendPayload() failed.", e);
                             }
                         })
@@ -1028,18 +1070,24 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
     protected void onReceive(Endpoint endpoint, Payload payload) {
         // This always gets the full data of the payload. Will be null if it's not a BYTES
 //            // payload. You can check the payload type with payload.getType().
-            byte[] receivedBytes = payload.asBytes();
-            String message = new String(receivedBytes);
+        byte[] receivedBytes = payload.asBytes();
+        String receivedPayload = new String(receivedBytes);
         try {
-            JSONObject object = new JSONObject(message);
-            NearbyConnectionsPlugin.sendPluginMessage(message, true, cbContext, TAG, "payload", object);
+            JSONObject object = new JSONObject(receivedPayload);
+            String message = "Received payload from " + endpoint.getId();
+            NearbyConnectionsPlugin.sendPluginMessage(message, true, cbContext, TAG, "payload", object, null);
         } catch (JSONException e) {
-            NearbyConnectionsPlugin.sendPluginMessage(e.getMessage(), true, cbContext, TAG, "log", null);
+            NearbyConnectionsPlugin.sendPluginMessage(e.getMessage(), true, cbContext, TAG, "log", null, null);
 
         }
     }
 
+    public JSONObject getEndpointList() {
+        return endpointList;
+    }
+
+    public void setEndpointList(JSONObject endpointList) {
+        this.endpointList = endpointList;
+    }
+
 }
-
-
-

@@ -7,12 +7,14 @@ public class Message extends JSONObject {
     private String messageType = "";
     private String message = "";
     private JSONObject object = null;
+    private String destination = "";
 
-    public Message(String messageType, String message, JSONObject object) {
+    public Message(String messageType, String message, JSONObject object, String destination) {
         super();
         this.messageType = messageType;
         this.message = message;
         this.object = object;
+        this.destination = destination;
     }
 
     public String getMessageType() {
@@ -39,6 +41,13 @@ public class Message extends JSONObject {
         this.object = object;
     }
 
+    public String getDestination() {
+        return destination;
+    }
+
+    public void setDestination(String destination) {
+        this.destination = destination;
+    }
 
 
 
