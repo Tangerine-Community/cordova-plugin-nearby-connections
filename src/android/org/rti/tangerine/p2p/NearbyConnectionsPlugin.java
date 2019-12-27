@@ -25,6 +25,7 @@ import android.content.pm.PackageManager;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.collection.SimpleArrayMap;
 
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.nearby.Nearby;
@@ -56,9 +57,17 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.Writer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -69,18 +78,22 @@ import java.util.Random;
 import java.util.Set;
 
 import static android.Manifest.permission.ACCESS_COARSE_LOCATION;
+import static android.Manifest.permission.ACCESS_FINE_LOCATION;
+import static android.Manifest.permission.READ_EXTERNAL_STORAGE;
+import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 
 public class NearbyConnectionsPlugin extends CordovaPlugin
 {
 
 
     public static final String TAG = "NearbyConnectionsPlugin";
+    public static final String FILENAME = "nearby.json";
 
     public CallbackContext cbContext;
 
     public static final String PERMISSION_TO_WIFI = Manifest.permission.CHANGE_WIFI_STATE;
     private static final String PERMISSION_DENIED_ERROR = "Permission denied";
-    String [] permissions = { PERMISSION_TO_WIFI, ACCESS_COARSE_LOCATION };
+    String [] permissions = { PERMISSION_TO_WIFI, ACCESS_COARSE_LOCATION, READ_EXTERNAL_STORAGE , WRITE_EXTERNAL_STORAGE, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION };
 
     public PluginResult pluginResult;
 
@@ -92,7 +105,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
      * The connection strategy we'll use for Nearby Connections. In this case, we've decided on
      * P2P_STAR, which is a combination of Bluetooth Classic and WiFi Hotspots.
      */
-    private static final Strategy STRATEGY = Strategy.P2P_POINT_TO_POINT;
+    private static final Strategy STRATEGY = Strategy.P2P_CLUSTER;
 
     /**
      * This service id lets us find other nearby devices that are interested in the same thing. Our
@@ -140,6 +153,9 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
     private boolean mIsAdvertising = false;
 
     private JSONObject endpointList;
+
+    private final SimpleArrayMap<Long, Payload> incomingFilePayloads = new SimpleArrayMap<>();
+
 
     /**
      * Sets the context of the Command.
@@ -220,7 +236,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                         String endpointString = "";
                         try {
                             endpointString = args.getString(0);
-                            String[] epArray = endpointString.split("_");
+                            String[] epArray = endpointString.split("~");
                             String id = epArray[0];
                             String name = epArray[1];
                             Endpoint endpoint = new Endpoint(id, name);
@@ -243,19 +259,54 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                     public void run() {
                         Log.i(TAG, "transferData");
                         String payloadString = "";
-                        JSONObject payload = null;
+                        JSONObject message = null;
+                        String payload = null;
                         try {
                             // payloadString = args.getString(0);
-                            payload = args.getJSONObject(0);
-                            payloadString = payload.getString("object");
+                            message = args.getJSONObject(0);
+                            payload = args.getString(1);
+//                            payloadString = payload.getString("object");
                         } catch (JSONException e) {
                             e.printStackTrace();
                         }
-                        sendPluginMessage("sending payload beginning with: " + payloadString.subSequence(0,50), true, "log", null);
+//                        int payloadLength = payloadString.length();
+//                        int max = 50;
+//                        if (payloadLength < 50) {
+//                            max = payloadLength;
+//                        }
+//                        sendPluginMessage("sending payload beginning with: " + payloadString.subSequence(0,max), true, "log", null);
 //                         byte[] payloadBytes = payload.getBytes();
-                        byte[] payloadBytes = payload.toString().getBytes();
-                        Payload bytesPayload = Payload.fromBytes(payloadBytes);
-                        send(bytesPayload);
+//                        byte[] payloadBytes = payload.toString().getBytes();
+                        File file;
+                        Context context = cordova.getActivity().getApplicationContext();
+                        file = new File(context.getCacheDir(), FILENAME);
+                        String filePath = file.getAbsolutePath().toString();
+//                        Payload bytesPayload = Payload.fromBytes(payloadBytes);
+                        Writer output;
+                        try {
+                            output = new BufferedWriter(new FileWriter(file));
+                            output.write(payload);
+                            output.close();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+
+                        long fileSizeInBytes = file.length();
+                        String pluginMessage = "sending payload; size: " + fileSizeInBytes + " path: " + filePath;
+                        sendPluginMessage(pluginMessage, true, "log", null);
+
+                        Payload filePayload = null;
+                        try {
+                            filePayload = Payload.fromFile(file);
+                        } catch (FileNotFoundException e) {
+                            e.printStackTrace();
+                        }
+
+//                        byte[] payloadBytes = payload.toString().getBytes();
+//                        Payload bytesPayload = Payload.fromBytes(payloadBytes);
+
+                        send(filePayload);
+//                        send(bytesPayload);
                     }
                 });
                 return true;
@@ -276,8 +327,8 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
      * @param object
      */
     private void sendPluginMessage(String pluginMessage, boolean keepCallback, String messageType, JSONObject object) {
-        Log.d(TAG, pluginMessage);
-//        Message messageObject = new Message(messageType,pluginMessage, object);
+        String message = "sendPluginMessage: messageType: " + messageType + " message: " + pluginMessage.substring(0, Math.min(pluginMessage.length(), 200));
+        Log.d(TAG, message);
         JSONObject jsonObject = new JSONObject();
         try {
             jsonObject.put("messageType", messageType);
@@ -287,9 +338,13 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
             Log.e(TAG, "sendPluginMessage Error: " + e.getMessage());
             e.printStackTrace();
         }
-        String jsonString = jsonObject.toString();
-        Log.d(TAG, "jsonString: "  + jsonString);
-        pluginResult = new PluginResult(PluginResult.Status.OK, jsonObject);
+        PluginResult.Status resultMessage;
+        if (messageType.equals("error")) {
+            resultMessage = PluginResult.Status.ERROR;
+        } else {
+            resultMessage = PluginResult.Status.OK;
+        }
+        pluginResult = new PluginResult(resultMessage, jsonObject);
         pluginResult.setKeepCallback(keepCallback);
         cbContext.sendPluginResult(pluginResult);
     }
@@ -306,8 +361,8 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
         if (tag == null) {
             tag = TAG;
         }
-        Log.d(tag, pluginMessage);
-//        Message messageObject = new Message(messageType,pluginMessage, object);
+        String message = "sendPluginMessage: messageType: " + messageType + " message: " + pluginMessage.substring(0, Math.min(pluginMessage.length(), 200));
+        Log.d(tag, message);
         JSONObject jsonObject = new JSONObject();
         try {
             jsonObject.put("messageType", messageType);
@@ -320,9 +375,13 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
             Log.e(tag, "sendPluginMessage Error: " + e.getMessage());
             e.printStackTrace();
         }
-        String jsonString = jsonObject.toString();
-        Log.d(tag, "jsonString: "  + jsonString);
-        PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, jsonObject);
+        PluginResult.Status resultMessage;
+        if (messageType.equals("error")) {
+            resultMessage = PluginResult.Status.ERROR;
+        } else {
+            resultMessage = PluginResult.Status.OK;
+        }
+        PluginResult pluginResult = new PluginResult(resultMessage, jsonObject);
         pluginResult.setKeepCallback(keepCallback);
         cbContext.sendPluginResult(pluginResult);
     }
@@ -462,38 +521,72 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
     /** Callbacks for payloads (bytes of data) sent from another device to us. */
     private final PayloadCallback mPayloadCallback =
             new PayloadCallback() {
+
                 @Override
                 public void onPayloadReceived(String endpointId, Payload payload) {
 //                    logD(String.format("onPayloadReceived from (endpointId=%s)", endpointId));
                     String pluginMessage = String.format("onPayloadReceived from (endpointId=%s)", endpointId);
                     Log.d(TAG, pluginMessage);
-                    onReceive(mEstablishedConnections.get(endpointId), payload);
+                    // not using this because we are using a File payload.
+                    // We are fetching it upon PayloadTransferUpdate.Status.SUCCESS
+
+                    if (payload.getType() == Payload.Type.BYTES) {
+//                        String payloadFilenameMessage = new String(payload.asBytes(), StandardCharsets.UTF_8);
+//                        long payloadId = addPayloadFilename(payloadFilenameMessage);
+//                        processFilePayload(payloadId);
+                        onReceive(mEstablishedConnections.get(endpointId), payload);
+                    } else if (payload.getType() == Payload.Type.FILE) {
+                        // Add this to our tracking map, so that we can retrieve the payload later.
+                        incomingFilePayloads.put(payload.getId(), payload);
+                    }
                 }
 
                 @Override
                 public void onPayloadTransferUpdate(String endpointId, PayloadTransferUpdate update) {
-                    logD(
-                            String.format(
-                                    "onPayloadTransferUpdate(endpointId=%s, update=%s)", endpointId, update));
-                    //            // Bytes payloads are sent as a single chunk, so you'll receive a SUCCESS update immediately
+                    long bytesTransferred = update.getBytesTransferred();
+                    long totalBytes = update.getTotalBytes();
+                    String logMessage = "onPayloadTransferUpdate. endpointId: " + endpointId + " status: " + update.getStatus() + " bytesTransferred: " + bytesTransferred + " totalBytes: " + totalBytes;
+//                    logD(logMessage);
+                    // Bytes payloads are sent as a single chunk, so you'll receive a SUCCESS update immediately
                     // after the call to onPayloadReceived().
+                    String originName = getName();
                     switch (update.getStatus()) {
                         case PayloadTransferUpdate.Status.SUCCESS:
-                            String originName = getName();
-                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer completed! ", true, cbContext, TAG, "payloadReceived", null, originName);
+                            long payloadId = update.getPayloadId();
+                            Payload payload = incomingFilePayloads.remove(payloadId);
+                            if (payload != null) {
+                                int payloadTypeId = payload.getType();
+                                NearbyConnectionsPlugin.sendPluginMessage("Received Data transfer!", true, cbContext, TAG, "payloadReceived", null, originName);
+                                if (payload.getType() == Payload.Type.FILE) {
+                                    onReceive(mEstablishedConnections.get(endpointId), payload);
+                                }
+                            } else {
+                                NearbyConnectionsPlugin.sendPluginMessage("Finished transferring data!", true, cbContext, TAG, "payloadReceived", null, originName);
+                            }
                             break;
                         case PayloadTransferUpdate.Status.FAILURE:
-                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer failure.", true, cbContext, TAG, "log", null, null);
+                            String pluginMessage = "Data transfer failure. bytesTransferred: " + bytesTransferred + " totalBytes: " + totalBytes;
+                            NearbyConnectionsPlugin.sendPluginMessage(pluginMessage, true, cbContext, TAG, "error", null, null);
                             break;
                         case PayloadTransferUpdate.Status.CANCELED:
-                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer cancelled.", true, cbContext, TAG, "log", null, null);
+                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer cancelled.", true, cbContext, TAG, "error", null, null);
                             break;
                         case PayloadTransferUpdate.Status.IN_PROGRESS:
-                            // don't log, could be verbose.
+                            JSONObject jsonObject = new JSONObject();
+                            try {
+                                jsonObject.put("originName", originName);
+                                jsonObject.put("endpointId", endpointId);
+                                jsonObject.put("bytesTransferred", bytesTransferred);
+                                jsonObject.put("totalBytes", totalBytes);
+                            } catch (JSONException e) {
+                                Log.e(TAG, "onPayloadTransferUpdate Error: " + e.getMessage());
+                                e.printStackTrace();
+                            }
+                            NearbyConnectionsPlugin.sendPluginMessage(logMessage, true, cbContext, TAG, "progress", jsonObject, null);
                             break;
                         default:
                             // Unknown status code
-                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer update - unknown: " + update.getStatus(), true, cbContext, TAG, "log", null, null);
+                            NearbyConnectionsPlugin.sendPluginMessage("Data transfer update status: " + update.getStatus(), true, cbContext, TAG, "log", null, null);
                     }
                 }
             };
@@ -507,7 +600,8 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
         if (mState == state) {
             logW("State set to " + state + " but already in that state");
             JSONObject endpointList = getEndpointList();
-            if (endpointList.length() > 0) {
+            if (endpointList != null && endpointList.length() > 0) {
+                logW("Sending endpoints.");
                 sendPluginMessage("Endpoints", true, "endpoints", endpointList);
             }
             return;
@@ -867,7 +961,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                             public void onFailure(@NonNull Exception e) {
                                 mIsDiscovering = false;
                                 logW("startDiscovering() failed.", e);
-                                sendPluginMessage("startDiscovering() failed." + e.getMessage(), true, "log", null);
+                                sendPluginMessage("startDiscovering() failed." + e.getMessage(), true, "error", null);
                                 onDiscoveryFailed();
                             }
                         });
@@ -944,7 +1038,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                             @Override
                             public void onFailure(@NonNull Exception e) {
                                 logW("requestConnection() failed. Message: " +  e.getMessage(), e);
-                                sendPluginMessage("Connection failed to " + endpoint.getId(), true, "log", null);
+                                sendPluginMessage("Connection failed to " + endpoint.getId(), true, "error", null);
                                 mIsConnecting = false;
                                 if (e.getMessage().contains("8003")) {
                                     logW("requestConnection() continuing with current connection.", e);
@@ -1034,13 +1128,14 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
     }
 
     private void send(Payload payload, Set<String> endpoints) {
-//        int count = endpoints.size();
-//        Log.d(TAG, "Send: Number of endpoints: " + count);
-//        Iterator<String> itr = endpoints.iterator();
-//        while(itr.hasNext()){
-//            String endPoint = itr.next();
-//            Log.d(TAG, "Sending to endpoint: " + endPoint);
-//        }
+        int count = endpoints.size();
+        Log.d(TAG, "Send: Number of endpoints: " + count);
+        Iterator<String> itr = endpoints.iterator();
+        while(itr.hasNext()){
+            String endPoint = itr.next();
+            int maxBytes = mConnectionsClient.MAX_BYTES_DATA_SIZE;
+            Log.d(TAG, "Sending to endpoint: " + endPoint + " maxBytes: " + maxBytes);
+        }
         mConnectionsClient
                 .sendPayload(new ArrayList<>(endpoints), payload)
                 .addOnFailureListener(
@@ -1070,16 +1165,30 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
     protected void onReceive(Endpoint endpoint, Payload payload) {
         // This always gets the full data of the payload. Will be null if it's not a BYTES
 //            // payload. You can check the payload type with payload.getType().
-        byte[] receivedBytes = payload.asBytes();
-        String receivedPayload = new String(receivedBytes);
-        try {
-            JSONObject object = new JSONObject(receivedPayload);
-            String message = "Received payload from " + endpoint.getId();
-            NearbyConnectionsPlugin.sendPluginMessage(message, true, cbContext, TAG, "payload", object, null);
-        } catch (JSONException e) {
-            NearbyConnectionsPlugin.sendPluginMessage(e.getMessage(), true, cbContext, TAG, "log", null, null);
+//        byte[] receivedBytes = payload.asBytes();
+        Log.d(TAG, "payload.getType(): " + payload.getType());
 
+        File receivedFile = payload.asFile().asJavaFile();
+
+//        String receivedPayload = new String(receivedBytes);
+        String receivedPayload = null;
+        try {
+            receivedPayload = loadDataFromFile(receivedFile);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+            Log.d(TAG, "onReceive payload: " + receivedPayload);
+//             JSONObject object = new JSONObject(receivedPayload);
+        JSONObject object = new JSONObject();
+        try {
+            object.put("payloadData", receivedPayload);
+        } catch (JSONException e) {
+            Log.e(TAG, "onReceive Error: " + e.getMessage());
+            e.printStackTrace();
+            NearbyConnectionsPlugin.sendPluginMessage(e.getMessage(), true, cbContext, TAG, "error", null, endpoint.getName());
+        }
+        String message = "Received payload from " + endpoint.getId();
+        NearbyConnectionsPlugin.sendPluginMessage(message, true, cbContext, TAG, "payload", object, endpoint.getName());
     }
 
     public JSONObject getEndpointList() {
@@ -1088,6 +1197,49 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
 
     public void setEndpointList(JSONObject endpointList) {
         this.endpointList = endpointList;
+    }
+
+    // kudos: http://www.java2s.com/Code/Android/File/GetFileContentsasString.htm
+    public static String getFileContents(final File file) throws IOException {
+        final InputStream inputStream = new FileInputStream(file);
+        final BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+
+        final StringBuilder stringBuilder = new StringBuilder();
+
+        boolean done = false;
+
+        while (!done) {
+            final String line = reader.readLine();
+            done = (line == null);
+
+            if (line != null) {
+                stringBuilder.append(line);
+            }
+        }
+
+        reader.close();
+        inputStream.close();
+
+        return stringBuilder.toString();
+    }
+
+    // kudos: https://stackoverflow.com/a/19945484
+
+    /**
+     * Loads data from file and returns it as a String.
+     * @param file
+     * @return String
+     * @throws IOException
+     */
+    public String loadDataFromFile(final File file) throws IOException {
+        String data = null;
+        InputStream is = new FileInputStream(file);
+        int size = is.available();
+        byte[] buffer = new byte[size];
+        is.read(buffer);
+        is.close();
+        data = new String(buffer, "UTF-8");
+        return data;
     }
 
 }
