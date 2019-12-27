@@ -1,6 +1,6 @@
 {
   "name": "cordova-plugin-nearby-connections",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Apache Cordova plugin that supports p2p communications using the Android Nearby Connections API.",
   "cordova": {
     "id": "cordova-plugin-nearby-connections",
