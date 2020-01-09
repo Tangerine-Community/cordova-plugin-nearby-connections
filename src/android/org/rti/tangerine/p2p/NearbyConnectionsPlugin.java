@@ -197,7 +197,15 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                 cordova.getActivity().runOnUiThread(new Runnable() {
                     public void run() {
                         Log.i(TAG, "startAdvertising");
-//                        startAdvertising();
+                        try {
+                            String name = args.getString(0);
+                            if (name != null && !name.equals("") && !name.equals("null")) {
+                                Log.i(TAG, "Setting device name to " + name);
+                                setmName(name);
+                            }
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
                         setState(State.SEARCHING);
                     }
                 });
@@ -598,13 +606,19 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
      */
     private void setState(State state) {
         if (mState == state) {
-            logW("State set to " + state + " but already in that state");
-            JSONObject endpointList = getEndpointList();
-            if (endpointList != null && endpointList.length() > 0) {
-                logW("Sending endpoints.");
-                sendPluginMessage("Endpoints", true, "endpoints", endpointList);
+            if (state.equals(State.SEARCHING)) {
+                logD("State set to " + state + " but already in that state. Clearing all endpoints.");
+                disconnectFromAllEndpoints();
+                stopDiscovering();
+                stopAdvertising();
+                stopAllEndpoints();
+                endpointList = null;
+                state = State.SEARCHING;
+                // don't return, let SEARCHING restart
+            } else {
+                logW("State set to " + state + " but already in that state");
+                return;
             }
-            return;
         }
 
         logD("State set to " + state);
@@ -723,6 +737,10 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
      */
     protected String getName() {
         return mName;
+    }
+
+    public void setmName(String mName) {
+        this.mName = mName;
     }
 
     /** {@see ConnectionsActivity#getServiceId()} */
@@ -1177,7 +1195,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
         } catch (IOException e) {
             e.printStackTrace();
         }
-            Log.d(TAG, "onReceive payload: " + receivedPayload);
+        Log.d(TAG, "onReceive payload: " + receivedPayload);
 //             JSONObject object = new JSONObject(receivedPayload);
         JSONObject object = new JSONObject();
         try {
