@@ -22,6 +22,9 @@ package org.rti.tangerine.p2p;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -62,25 +65,31 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Writer;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Random;
+import java.util.Random; 
 import java.util.Set;
 
 import static android.Manifest.permission.ACCESS_COARSE_LOCATION;
 import static android.Manifest.permission.ACCESS_FINE_LOCATION;
 import static android.Manifest.permission.READ_EXTERNAL_STORAGE;
 import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
+import static android.os.Environment.isExternalStorageLegacy;
+
 
 public class NearbyConnectionsPlugin extends CordovaPlugin
 {
@@ -1184,29 +1193,68 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
         // This always gets the full data of the payload. Will be null if it's not a BYTES
 //            // payload. You can check the payload type with payload.getType().
 //        byte[] receivedBytes = payload.asBytes();
+        // BYTES: 1; FILE: 2; STREAM: 3
         Log.d(TAG, "payload.getType(): " + payload.getType());
 
-        File receivedFile = payload.asFile().asJavaFile();
+        File receivedFile = null;
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            receivedFile = payload.asFile().asJavaFile();
+            // tested and this does work
+//             if (isExternalStorageLegacy(receivedFile)) {
+//                 logW("onReceive(): isExternalStorageLegacy");
+//             }
+            // the api for payload.asFile().asUri() is not complete; once it is, uncomment this section and test.
+            // also comment out receivedFile = payload.asFile().asJavaFile();
 
-//        String receivedPayload = new String(receivedBytes);
-        String receivedPayload = null;
-        try {
-            receivedPayload = loadDataFromFile(receivedFile);
-        } catch (IOException e) {
-            e.printStackTrace();
+//            Date date = new Date();
+//            //Pattern for showing milliseconds in the time "SSS"
+//            DateFormat sdf = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS");
+//            String stringDate = sdf.format(date);
+//            String filename = "payload-" + stringDate;
+//            Log.d(TAG, "filename: " + filename);
+//            Context context = cordova.getActivity().getApplicationContext();
+//            receivedFile = new File(context.getCacheDir(), filename);
+//            // Because of https://developer.android.com/preview/privacy/scoped-storage, we are not
+//            // allowed to access filepaths from another process directly. Instead, we must open the
+//            // uri using our ContentResolver.
+//            Uri uri = payload.asFile().asUri();
+//            try {
+//              // Copy the file to a new location.
+//              InputStream in = context.getContentResolver().openInputStream(uri);
+//              copyStream(in, new FileOutputStream(receivedFile));
+//            } catch (IOException e) {
+//              logW("onReceive() failed, file stream issue: ", e);
+//            } finally {
+//              // Delete the original file.
+//              context.getContentResolver().delete(uri, null, null);
+//            }
+        } else {
+            receivedFile = payload.asFile().asJavaFile();
         }
-        Log.d(TAG, "onReceive payload: " + receivedPayload);
-//             JSONObject object = new JSONObject(receivedPayload);
-        JSONObject object = new JSONObject();
-        try {
-            object.put("payloadData", receivedPayload);
-        } catch (JSONException e) {
-            Log.e(TAG, "onReceive Error: " + e.getMessage());
-            e.printStackTrace();
-            NearbyConnectionsPlugin.sendPluginMessage(e.getMessage(), true, cbContext, TAG, "error", null, endpoint.getName());
+        
+        if (receivedFile != null) {
+            String receivedPayload = null;
+            try {
+                receivedPayload = loadDataFromFile(receivedFile);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            Log.d(TAG, "onReceive payload: " + receivedPayload);
+    //             JSONObject object = new JSONObject(receivedPayload);
+            JSONObject object = new JSONObject();
+            try {
+                object.put("payloadData", receivedPayload);
+            } catch (JSONException e) {
+                Log.e(TAG, "onReceive Error: " + e.getMessage());
+                e.printStackTrace();
+                NearbyConnectionsPlugin.sendPluginMessage(e.getMessage(), true, cbContext, TAG, "error", null, endpoint.getName());
+            }
+            String message = "Received payload from " + endpoint.getId();
+            NearbyConnectionsPlugin.sendPluginMessage(message, true, cbContext, TAG, "payload", object, endpoint.getName());
+        } else {
+            logW("onReceive() failed, receivedFile null. ");
         }
-        String message = "Received payload from " + endpoint.getId();
-        NearbyConnectionsPlugin.sendPluginMessage(message, true, cbContext, TAG, "payload", object, endpoint.getName());
     }
 
     public JSONObject getEndpointList() {
@@ -1259,5 +1307,19 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
         data = new String(buffer, "UTF-8");
         return data;
     }
-
+    
+      /** Copies a stream from one location to another. */
+    private static void copyStream(InputStream in, OutputStream out) throws IOException {
+        try {
+          byte[] buffer = new byte[1024];
+          int read;
+          while ((read = in.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+          }
+          out.flush();
+        } finally {
+          in.close();
+          out.close();
+        }
+    }
 }
