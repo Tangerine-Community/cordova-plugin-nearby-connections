@@ -253,7 +253,7 @@ public class NearbyConnectionsPlugin extends CordovaPlugin
                         String endpointString = "";
                         try {
                             endpointString = args.getString(0);
-                            String[] epArray = endpointString.split("~");
+                            String[] epArray = endpointString.split("_");
                             String id = epArray[0];
                             String name = epArray[1];
                             Endpoint endpoint = new Endpoint(id, name);
